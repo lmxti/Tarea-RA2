@@ -1,324 +1,270 @@
+#include "Game.h"
+
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
-#include <random>
 
-
-using namespace std;
-// Tamaño de tablero. [15]x[15]
 const int BOARD_SIZE = 15;
-// 1 PORTAAVION (P) de 5 casillas
-const char PORTAAVIONES = 'P';
-// 2 BUQUES (B) de 4 casillas
-const char BUQUE = 'B';
-// 2 SUBMARINO (S) de 3 casillas.
-const char SUBMARINO ='S';
-//  3 LANCHAS (L) de 1 casilla.
-const char LANCHA = 'L';
-//  Caracter que representa el agua
-const char AGUA = '~';
+const char AGUA = 'o';
+struct Ship {
+    int size;
+    char type;
+};
 
-// Colores de texto ANSI
+const Ship SHIPS[] = {
+    {5, 'P'},  // PORTAAVIONES
+    {4, 'B'},  // BUQUE
+    {4, 'B'},  // BUQUE
+    {3, 'S'},  // SUBMARINO
+    {3, 'S'},  // SUBMARINO
+    {1, 'L'},  // LANCHA
+    {1, 'L'},  // LANCHA
+    {1, 'L'}   // LANCHA 
+};
+
 const string ANSI_COLOR_RED = "\x1b[31m";
 const string ANSI_COLOR_BLUE = "\x1b[34m";
 const string ANSI_COLOR_RESET = "\x1b[0m";
 
-// Estructura de cada celda del tablero.
-struct Cell {
-    // Entidad que representa
-    char entity;
-    // Estado de la celda
-    bool isHit;
-    // Verificacion de que celda sea una un barco
-    bool hasShip() const { return entity != AGUA; }
-    // Constructor de estructura "Cell" para establecer el agua y estado de la celda.
-    Cell(): entity(AGUA), isHit(false) {}
-};
+const string Game::imprimirBarco() {
+    string boat =
+        "                                              _____            __\n"
+        "                                             |     |    __    |__|      |-._\n"
+        "                                   ___       |_____|___|__|___|__|__    |-._|\n"
+        "                                  |___|      |     | . . . . . . . |    |\n"
+        "                          ________|___|______|_____|_______________|____|__\n"
+        "                          \\    |.---------------------------------       /\n"
+        "                           \\---'  o        o        o        o   '------/\n"
+        "                            \\__________________________________________/\n"
+        "~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \\________________________________________/~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+        "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
 
-// Estructura del tablero
-struct Board {
-    // Matriz bidimensional que representa las celdas individuales del tablero.
-    Cell grid[BOARD_SIZE][BOARD_SIZE];
-    // Constructor de la estructura Board que inicializa el constructor de cell para cada elemento de la matriz grid
-    Board() : grid() {}
+    return boat;
+}
 
-    /*-------------------  POSICIONAMIENTO DE BARCO -------------------*/
-    void placeShip(int x, int y, int direccion, int size, char ship) {
-        // Direccion horizontal
+Game::Game() {
+    srand(time(NULL));
+}
+
+const string Game::play(int playerChoice) {
+    if (playerChoice == 1) {
+        initializeBoard(playerBoard);
+    }
+
+    initializeBoard(aiBoard);
+    isPlayerTurn = rand() % 2 == 0;
+    string ret = "El primero en jugar es " + string(isPlayerTurn == 0 ? "la IA" : "el Jugador") + "\n";
+    return ret;
+}
+
+const string Game::checkTurn() {
+    string state = "";
+
+    if (!playerBoard.allShipsDestroyed() && !aiBoard.allShipsDestroyed()) {
+        state += "TURNO DE: " + string(isPlayerTurn == 0 ? "IA" : "Jugador") + "\n";
+
+        if (isPlayerTurn == 0) {
+            state += aiTurn(playerBoard);
+        }
+        state += "\t\t\t\t\t\t\t TU TABLERO:\n";
+        state += printBoard(playerBoard, true);
+        state += "\t\t\t\t\t\t\t TABLERO DE IA\n";
+        state += printBoard(aiBoard, false);
+
+    } else if (playerBoard.allShipsDestroyed()) {
+        state += "0";
+    } else {
+        state += "1";
+    }
+
+    return state;
+}
+
+bool Game::Cell::hasShip() const {
+    return entity != AGUA;
+}
+
+Game::Cell::Cell() : entity(AGUA), isHit(false) {}
+
+Game::Board::Board() : grid() {}
+
+void Game::Board::placeShip(int x, int y, int direccion, int size, char ship) {
+    for (int i = 0; i < size; i++) {
         if (direccion == 0) {
-            for (int i = 0; i < size; i++) {
-                grid[x][y + i].entity = ship;
-            }
+            grid[x + i][y].entity = ship;
         } else {
-            // Direccion vertical
-            for (int i = 0; i < size; i++) {
-                grid[x + i][y].entity = ship;
+            grid[x][y + i].entity = ship;
+        }
+    }
+}
+
+bool Game::Board::isValidPosition(int x, int y) const {
+    return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE;
+}
+
+void Game::Board::markHit(int x, int y) {
+    grid[x][y].isHit = true;
+}
+
+bool Game::Board::allShipsDestroyed() const {
+    for (int i = 0; i < BOARD_SIZE; i++) {
+        for (int j = 0; j < BOARD_SIZE; j++) {
+            if (grid[i][j].hasShip() && !grid[i][j].isHit) {
+                return false;
             }
         }
     }
-    /*-------------------  AL DISPARAR -------------------*/
-    bool isValidPosition(int x, int y) const {
-         return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE;
-    }
-    void markHit(int x, int y){
-        grid[x][y].isHit = true;
-    }
-    /*------------------- VERIFICACION DE BARCOS EN TABLERO ------------------- */
-    bool allShipsDestroyed() const {
-        for (int i = 0; i < BOARD_SIZE; i++) {
-            for (int j = 0; j < BOARD_SIZE; j++) {
-                if (grid[i][j].hasShip() && !grid[i][j].isHit) {
-                    return false;
-                }
-        }
-    }
-        return true;
-    }
-};
-// Funcion para generar una posicion aleatoria del barco en [x,y] que no sobrepase el tablero 
-void generateRandomPosition(int& x, int& y, int maxX, int maxY) {
+    return true;
+}
+
+void Game::generateRandomPosition(int& x, int& y, int maxX, int maxY) {
     x = rand() % maxX;
     y = rand() % maxY;
 }
-// Funcion para que la IA dispare aleatoriamente en el tablero
-void generateRandomPosition(int& x, int& y) {
-    x = rand() % BOARD_SIZE;
-    y = rand() % BOARD_SIZE;
+
+void Game::generateRandomPosition(int& x, int& y) {
+    generateRandomPosition(x, y, BOARD_SIZE, BOARD_SIZE);
 }
-void printBoard(const Board& board, bool showShips = false) {
-    cout << "\t\t\t\t     0   1   2   3   4   5   6   7   8   9  10   11  12  13  14" << endl;
-    cout << "\t\t\t\t     ----------------------------------------------------------" << endl;
+
+const string Game::printBoard(const Board& board, bool showShips) {
+    string ret = "\t\t\t\t     0   1   2   3   4   5   6   7   8   9  10  11  12  13  14\n";
+    ret += "\t\t\t\t     ----------------------------------------------------------\n";
+
     for (int i = 0; i < BOARD_SIZE; i++) {
-        cout << "\t\t\t\t";
-        cout << i << " " << (i < 10 ? " |" : "|");
+        ret += "\t\t\t\t" + to_string(i) + " " + string(i < 10 ? " |" : "|");
+
         for (int j = 0; j < BOARD_SIZE; j++) {
             // Verifica si la celda ha sido golpeada
-            if (board.grid[i][j].isHit){
-                if (board.grid[i][j].hasShip()){
-                    cout <<  " " << ANSI_COLOR_RED << board.grid[i][j].entity << ANSI_COLOR_RESET << "  ";
-                } 
-                else {
+            if (board.grid[i][j].isHit) {
+                if (board.grid[i][j].hasShip()) {
+                    ret += " " + ANSI_COLOR_RED + board.grid[i][j].entity + ANSI_COLOR_RESET + "  ";
+                } else {
                     // Tiro fallido
-                    cout <<  " " << ANSI_COLOR_BLUE << AGUA << ANSI_COLOR_RESET << "  " ;
+                    ret += " " + ANSI_COLOR_BLUE + AGUA + ANSI_COLOR_RESET + "  ";
                 }
-            }
-            else {
-                if ( showShips && board.grid[i][j].hasShip()){
-                    cout  << " " << board.grid[i][j].entity << "  " ;
-                }
-                else {
-                    cout << " .  ";
+            } else {
+                if (showShips && board.grid[i][j].hasShip()) {
+                    ret += " " + string(1, board.grid[i][j].entity) + "  ";
+                } else {
+                    ret += " .  ";
                 }
             }
         }
-        cout << " " << endl;
+        ret += " \n";
     }
-     cout << "" << endl;
+    ret += "\n";
+
+    return ret;
 }
-// Funcion para el posicionamiento aleatorio de barcos
-void placeRandomShip(Board& board, int size, char ship) {
-    int x, y, direccion = rand() % 2;
-    bool free = true;
 
-    // Ejecucion hasta encontrar posicion valida para el barco(ship)
-    do {
-        do {
-            generateRandomPosition(x, y, BOARD_SIZE - (direccion == 1 ? size : 0), BOARD_SIZE - (direccion == 0 ? size : 0));
-        } while (board.grid[x][y].hasShip());
+void Game::placeRandomShip(Board& board, int size, char ship) {
+    int x, y, direccion;
+    bool validPosition = false;
 
-        for (int i = 1; i < size; i++) {
+    while (!validPosition) {
+        generateRandomPosition(x, y);
+        direccion = rand() % 2;
+        validPosition = true;
+
+        for (int i = 0; i < size; i++) {
             if (direccion == 0) {
-                if (board.grid[x][y + i].hasShip()) {
-                    free = false;
+                if (!board.isValidPosition(x + i, y) || board.grid[x + i][y].hasShip()) {
+                    validPosition = false;
                     break;
                 }
             } else {
-                if (board.grid[x + i][y].hasShip()) {
-                    free = false;
+                if (!board.isValidPosition(x, y + i) || board.grid[x][y + i].hasShip()) {
+                    validPosition = false;
                     break;
                 }
             }
         }
-    } while (!free);
-    // Posicionar barco en las coordenadas [x,y] y direccion.
+    }
+
     board.placeShip(x, y, direccion, size, ship);
 }
-// Funcion para el posicionamiento manual de barcos
-void placeShipManually(Board& board, int size, char ship) {
-    int x, y, direccion;
-    bool free = true;
-    do {
-        cout << "Ingresa la coordenada [X Y] para posicionar el barco (" << ship << "): ";
-        cin >> x >> y;
-        cout << "Dirección (0 - horizontal, 1 - vertical): ";
-        cin >> direccion;
 
-        free = true; // Reiniciar el flag "free" en cada iteración
+const string Game::placementInfo(int index) {
+    string ret = printBoard(playerBoard, true) + "\nIngresa la coordenada [columna] [Fila] para posicionar el barco (";
+    ret += SHIPS[index].type;
+    ret += "-" + to_string(SHIPS[index].size) + "): ";
 
+    return ret;
+}
+
+const string Game::placePlayerShip(int typeShip, int x, int y, int direccion) {
+    bool validPosition = false;
+    for (int i = 0; i < SHIPS[typeShip].size; i++) {
         if (direccion == 0) {
-            for (int i = 0; i < size; i++) {
-                if (y + i >= BOARD_SIZE || board.grid[x][y + i].hasShip()) {
-                    free = false;
-                    break;
-                }
+            if (!playerBoard.isValidPosition(x + i, y) || playerBoard.grid[x + i][y].hasShip()) {
+                validPosition = false;
+                return "Posicion invalida";
             }
         } else {
-            for (int i = 0; i < size; i++) {
-                if (x + i >= BOARD_SIZE || board.grid[x + i][y].hasShip()) {
-                    free = false;
-                    break;
-                }
+            if (!playerBoard.isValidPosition(x, y + i) || playerBoard.grid[x][y + i].hasShip()) {
+                validPosition = false;
+                return "Posicion invalida";
             }
         }
-        if (!free) {
-            system("clear");
-            cout << "Posicion de " << ship << " no valida . Intente nuevamente." << endl;
-            printBoard(board, true);
-        }
-    } while (!free);
+    }
 
-    board.placeShip(x, y, direccion, size, ship);
-    printBoard(board, true);
+    playerBoard.placeShip(x, y, direccion, SHIPS[typeShip].size, SHIPS[typeShip].type);
+    return "ok";
 }
 
-void initializeBoard(Board& board,int option) {
-    // Posicionamiento aleatorio
-    if (option == 1){
-            placeRandomShip(board, 5, PORTAAVIONES);
-        for (int i = 0; i < 2; i++) {
-            placeRandomShip(board, 4, BUQUE);
-        }
-
-        for (int i = 0; i < 2; i++) {
-            placeRandomShip(board, 3, SUBMARINO);
-        }
-
-        for (int i = 0; i < 3; i++) {
-            placeRandomShip(board, 1, LANCHA);
-        }
-    // Seleccion de posiciones
-    } else if(option == 2){
-        placeShipManually(board, 5, PORTAAVIONES);
-        for (int i = 0; i < 2; i++) {
-            placeShipManually(board, 4, BUQUE);
-        }
-
-        for (int i = 0; i < 2; i++) {
-            placeShipManually(board, 3, SUBMARINO);
-        }
-
-        for (int i = 0; i < 3; i++) {
-            placeShipManually(board, 1, LANCHA);
-        }
-    } else {
-        cout << "Opción inválida." << endl;
-        return;
+void Game::initializeBoard(Board& board) {
+    board = Board();
+    int length = sizeof(SHIPS) / sizeof(SHIPS[0]);
+    for (int i = 0; i < length; i++) {
+        placeRandomShip(board, SHIPS[i].size, SHIPS[i].type);
     }
 }
 
-void playerTurn(Board& board){
-    int x, y;
-    do {
-        // Limpieza de entrada no valida
-        if (cin.fail()) {
-            cin.clear();
-            cin.ignore(1000, '\n');
-            continue;
-        }
-         cout << "\t\t\t\t\t  Ingresa la coordenada [Fila][Columna]: ";
-         cin >> x >> y;
-    } while(!board.isValidPosition(x,y) || board.grid[x][y].isHit);
-    cout << "Disparaste en ["<< x << "," << y << "] y" << " ";
-    if (board.grid[x][y].hasShip()) {
-        cout << " Le diste a un barco!\n" << endl;
-    } else {
-        cout << " Fallaste el tiro.\n" << endl;
+const string Game::playerTurn(int x, int y) {
+    if (!aiBoard.isValidPosition(x, y) || aiBoard.grid[x][y].isHit) {
+        return "\t\t\t\t\t  Disparo inválido. Inténtalo de nuevo.\n[" + to_string(y) + "," + to_string(x) + "]\n";
     }
-    board.markHit(x, y);
+
+    aiBoard.markHit(x, y);
+
+    string ret = "\t\t\t\t\t\t Disparaste en [" + to_string(y) + "," + to_string(x) + "] y ";
+
+    if (aiBoard.grid[x][y].hasShip()) {
+        cout << "El usuario golpeo un barco de la IA" << endl;
+        ret += "¡Has alcanzado un barco enemigo!\n";
+    } else {
+        cout << "El usuario fallo" << endl;
+        ret += "Fallaste el tiro\n";
+    }
+
+    isPlayerTurn = !isPlayerTurn;
+    return ret;
 }
 
-void aiTurn(Board& board){
+const string Game::aiTurn(Board& board) {
     int x, y;
-    do{
+    bool validShot = false;
+
+    while (!validShot) {
         generateRandomPosition(x, y);
-    } while ( board.grid[x][y].isHit);
-    cout << "La IA disparo en las coordenadas ["<< x << "," << y << "] y " << "";
-    if (board.grid[x][y].hasShip()){
-        cout << "ha golpeado tu barco\n" << endl;
+        validShot = !board.grid[x][y].isHit;
     }
-    else{
-        cout << "ha fallado su tiro \n" << endl;
-    }
+
     board.markHit(x, y);
-}
 
-void imprimirBarco(){
-    cout << "                                              _____            __\n";
-    cout << "                                             |     |    __    |__|      |-._\n";
-    cout << "                                   ___       |_____|___|__|___|__|__    |-._|\n";
-    cout << "                                  |___|      |     | . . . . . . . |    |\n";
-    cout << "                          ________|___|______|_____|_______________|____|__\n";
-    cout << "                          \\    |.---------------------------------       /\n";
-    cout << "                           \\---'  o        o        o        o   '------/\n";
-    cout << "                            \\__________________________________________/\n";
-    cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~ \\________________________________________/~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
-    cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
-}
+    string ret = "\t\t\t\t\t\t  La IA displaro en [" + to_string(y) + "," + to_string(x) + "]\n";
 
-int main() {
-    srand(time(NULL));
-    // Menu de inicio "Battleship"
-    imprimirBarco();
-    cout <<"\n\t\t\t\t\tBIENVENIDO A BATTLESHIP\n\n";
-    cout << "\t\t\t\t\t      Presiona: \n\t\t\t\t 1.Posicionar barcos aleatoriamente \n\t\t\t\t 2.Seleccionar posicion de barcos \n\t\t\t\t\t\t>>" ;
-    int option;
-    cin >> option;
-    system("clear");
-    
-    // Tablero Jugador
-    Board playerBoard;
-    // Tablero IA
-    Board aiBoard;
-    initializeBoard(playerBoard, option);
-    initializeBoard(aiBoard,1);
-
-    // Determinar quién comienza el primer turno de forma aleatoria
-    random_device rd;
-    mt19937 gen(rd());
-    uniform_int_distribution<> dis(0, 1);
-    bool result = dis(gen) == 0;
-
-    while (!playerBoard.allShipsDestroyed() && !aiBoard.allShipsDestroyed()) {
-        cout << "TURNO DE: " << (result == 0 ? "IA" : "Jugador") << endl;
-        cout << "\t\t\t\t\t\t\t TU TABLERO:" << endl;
-        printBoard(playerBoard, true);
-        cout << "\t\t\t\t\t\t\t TABLERO DE IA" << endl;
-        printBoard(aiBoard, true);
-    
-        if (result) {
-            // Turno del jugador
-            cout << "\t\t\t\t\t\t\tTu turno: " << endl;
-            playerTurn(aiBoard);
-        } else {
-            // Turno de la IA
-            if (!aiBoard.allShipsDestroyed()) {
-                cout << "\t\t\t\t\t\t\tTurno de IA:" << endl;
-                aiTurn(playerBoard); 
-            }   
-        }
-    result = !result; // Actualizar el valor de result para alternar los turnos
-}
-
-    if (playerBoard.allShipsDestroyed()) {
-        cout << "Derrota!." << endl;
+    if (board.grid[x][y].hasShip()) {
+        cout << "La IA alcanzo un barco enemigo" << endl;
+        ret += "\t\t\t\t\t\t  La IA ha alcanzado uno de tus barcos.\n";
     } else {
-        cout << "Victoria!" << endl;
+        cout << "La IA fallo" << endl;
+        ret += "\t\t\t\t\t\t  La IA ha disparado al agua.\n";
     }
-    return 0;
+
+    isPlayerTurn = !isPlayerTurn;
+    return ret;
 }
-
-
-
-
